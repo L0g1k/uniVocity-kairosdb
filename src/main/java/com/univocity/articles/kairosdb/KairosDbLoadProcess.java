@@ -5,19 +5,27 @@
  ******************************************************************************/
 package com.univocity.articles.kairosdb;
 
-import javax.sql.*;
+import javax.sql.DataSource;
 
-import org.apache.commons.lang.*;
-import org.slf4j.*;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import com.univocity.api.*;
-import com.univocity.api.config.*;
-import com.univocity.api.config.builders.*;
-import com.univocity.api.engine.*;
-import com.univocity.api.entity.custom.*;
-import com.univocity.api.entity.jdbc.*;
-import com.univocity.articles.databases.*;
-import com.univocity.articles.kairosdb.custom.*;
+import com.univocity.api.Univocity;
+import com.univocity.api.config.EngineConfiguration;
+import com.univocity.api.config.MetadataSettings;
+import com.univocity.api.config.builders.DataStoreMapping;
+import com.univocity.api.config.builders.EntityMapping;
+import com.univocity.api.config.builders.PersistenceSetup;
+import com.univocity.api.engine.DataIntegrationEngine;
+import com.univocity.api.engine.EngineScope;
+import com.univocity.api.engine.FunctionCall;
+import com.univocity.api.entity.custom.DataStoreConfiguration;
+import com.univocity.api.entity.jdbc.JdbcDataStoreConfiguration;
+import com.univocity.articles.databases.Database;
+import com.univocity.articles.databases.DatabaseFactory;
+import com.univocity.articles.kairosdb.custom.KairosDataStoreConfiguration;
+import com.univocity.articles.kairosdb.custom.KairosDataStoreFactory;
 
 public class KairosDbLoadProcess {
 
@@ -35,12 +43,17 @@ public class KairosDbLoadProcess {
 
 	private int batchSize = 10000;
 
+	private LastTableRow lastTableRow;
+
 	public KairosDbLoadProcess() {
 
 		this.database = DatabaseFactory.getInstance().getDestinationDatabase();
 		this.metadataDatabase = DatabaseFactory.getInstance().getMetadataDatabase();
-
-		log.info("Starting {} with {} storing metadata in {}", getClass().getName(), database.getDatabaseName(), metadataDatabase.getDatabaseName());
+		this.lastTableRow = new LastTableRow();
+		
+		String lastRowHelper = lastTableRow.getLastRowId().isPresent() ? ("row " + lastTableRow.getLastRowId().get().toString()) : "the beginning";
+		log.info("Starting {} with {}, from {}", getClass().getSimpleName(), database.getDatabaseName(), 
+				lastRowHelper);
 
 		DataStoreConfiguration databaseConfig = createSourceDatabaseConfiguration();
 		DataStoreConfiguration kairosConfig = createKairosDbConfiguration();
@@ -49,7 +62,8 @@ public class KairosDbLoadProcess {
 		EngineConfiguration config = new EngineConfiguration(ENGINE_NAME, databaseConfig, kairosConfig);
 		config.setMetadataSettings(metadataConfig);
 
-		//This step is important: it makes uniVocity "know" how to initialize a data store from our KairosDataStoreConfiguration
+		// This step is important: it makes uniVocity "know" how to initialize a
+		// data store from our KairosDataStoreConfiguration
 		config.addCustomDataStoreFactories(new KairosDataStoreFactory());
 
 		Univocity.registerEngine(config);
@@ -59,39 +73,45 @@ public class KairosDbLoadProcess {
 	}
 
 	/**
-	 * Creates a {@link JdbcDataStoreConfiguration} configuration object with the appropriate settings
-	 * for the underlying database.
+	 * Creates a {@link JdbcDataStoreConfiguration} configuration object with
+	 * the appropriate settings for the underlying database.
 	 *
 	 * @return the configuration for the "database" data store.
 	 */
 	public DataStoreConfiguration createSourceDatabaseConfiguration() {
-		//Gets a javax.sql.DataSource instance from the database object.
+		// Gets a javax.sql.DataSource instance from the database object.
 		DataSource dataSource = database.getDataSource();
 
-		//Creates a the configuration of a data store named "database", with the given javax.sql.DataSource
+		// Creates a the configuration of a data store named "database", with
+		// the given javax.sql.DataSource
 		JdbcDataStoreConfiguration config = new JdbcDataStoreConfiguration(SOURCE, dataSource);
 
-		//when reading from tables of this database, never load more than the given number of rows at once.
-		//uniVocity will block any reading process until there's room for more rows.
+		// when reading from tables of this database, never load more than the
+		// given number of rows at once.
+		// uniVocity will block any reading process until there's room for more
+		// rows.
 		config.setLimitOfRowsLoadedInMemory(batchSize);
 
-		//applies any additional configuration that is database-dependent. Refer to the implementations under package *com.univocity.articles.importcities.databases*
+		// applies any additional configuration that is database-dependent.
+		// Refer to the implementations under package
+		// *com.univocity.articles.importcities.databases*
 		database.applyDatabaseSpecificConfiguration(config);
 
 		return config;
 	}
 
 	/**
-	 * Creates a {@link KairosDataStoreConfiguration} configuration object with the appropriate settings
-	 * to connect to and store information into a KairosDB server.
+	 * Creates a {@link KairosDataStoreConfiguration} configuration object with
+	 * the appropriate settings to connect to and store information into a
+	 * KairosDB server.
 	 *
 	 * @return the configuration for the "Kairos" data store.
 	 */
 	public DataStoreConfiguration createKairosDbConfiguration() {
 
-		KairosDataStoreConfiguration config = new KairosDataStoreConfiguration(DESTINATION, "localhost:8080");
+		KairosDataStoreConfiguration config = new KairosDataStoreConfiguration(DESTINATION, "http://75.101.231.239:8080");
 
-		//entity observations with tag "observationKind"
+		// entity observations with tag "observationKind"
 		config.addEntity("observations", "observationKind");
 
 		return config;
@@ -99,12 +119,15 @@ public class KairosDbLoadProcess {
 	}
 
 	/**
-	 * Creates a {@link MetadataSettings} configuration object defining how uniVocity
-	 * should store metadata generated in mappings where {@link PersistenceSetup#usingMetadata()} has been used.
+	 * Creates a {@link MetadataSettings} configuration object defining how
+	 * uniVocity should store metadata generated in mappings where
+	 * {@link PersistenceSetup#usingMetadata()} has been used.
 	 *
-	 * The database configured for metadata storage in /src/main/resources/connection.properties will be used.
+	 * The database configured for metadata storage in
+	 * /src/main/resources/connection.properties will be used.
 	 *
-	 * This is configuration is optional and if not provided uniVocity will create its own in-memory database.
+	 * This is configuration is optional and if not provided uniVocity will
+	 * create its own in-memory database.
 	 *
 	 * @return the configuration for uniVocity's metadata storage.
 	 */
@@ -126,14 +149,17 @@ public class KairosDbLoadProcess {
 	}
 
 	/**
-	 * Executes a data mapping cycle. The actual data mappings are defined by subclasses
-	 * in the {@link #configureMappings()} method.
+	 * Executes a data mapping cycle. The actual data mappings are defined by
+	 * subclasses in the {@link #configureMappings()} method.
 	 */
 	public void execute() {
 		engine.executeCycle();
 	}
 
 	private void configureMappings() {
+		
+		engine.setVariable("last_id", lastTableRow.getLastRowId().orElse(0L));
+		
 		engine.addFunction(EngineScope.STATELESS, "mergeFunction", new FunctionCall<String, Object[]>() {
 			@Override
 			public String execute(Object[] input) {
@@ -148,18 +174,24 @@ public class KairosDbLoadProcess {
 			}
 		});
 
+		engine.addQuery(EngineScope.STATELESS, "observationsAfter").onDataStore(SOURCE).
+			fromString("select * from observation where id >= :lastSyncId").returnDataset();
+
 		DataStoreMapping mapping = engine.map(SOURCE, DESTINATION);
 
-		EntityMapping map = mapping.map("observation", "observations");
+		EntityMapping map = mapping.map("{observationsAfter($last_id)}", "observations"); 
 
-		map.identity().associate("fieldUnitZoneIdentifier", "fieldUnitAddress", "deviceLabel").to("name").readWith("mergeFunction");
+		map.value().merge("fieldUnitZoneIdentifier", "fieldUnitAddress", "deviceLabel", "observationKind").using("mergeFunction").into("name");
+
 		map.value().copy("observationTimeEpochSeconds").to("timestamp").readingWith("from_s_to_ms");
 		map.value().copy("observedValue").to("value");
 		map.value().copy("observationKind").to("observationKind");
-		
-		//we are just inserting here:
-		map.persistence().usingMetadata().deleteDisabled().updateDisabled().insertNewRows();
+
+		// we are just inserting here:
+		map.persistence().notUsingMetadata().deleteDisabled().updateDisabled().insertNewRows();
 	}
+
+	
 
 	public static void main(String... args) {
 		KairosDbLoadProcess process = new KairosDbLoadProcess();

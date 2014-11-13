@@ -5,13 +5,22 @@
  ******************************************************************************/
 package com.univocity.articles.kairosdb.custom;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
-import org.apache.commons.lang.*;
-import org.kairosdb.client.builder.*;
+import org.apache.commons.lang.StringUtils;
+import org.kairosdb.client.builder.Metric;
+import org.kairosdb.client.builder.MetricBuilder;
 
-import com.univocity.api.entity.*;
-import com.univocity.api.entity.custom.*;
+import com.univocity.api.entity.DefaultEntityField;
+import com.univocity.api.entity.custom.CustomDataEntity;
+import com.univocity.api.entity.custom.ExclusionProcess;
+import com.univocity.api.entity.custom.ReadingProcess;
+import com.univocity.api.entity.custom.UpdateProcess;
+import com.univocity.api.entity.custom.WritingProcess;
 
 /**
  * A custom entity for KairosDB that implements methods for data modification.
@@ -37,7 +46,7 @@ class KairosDataEntity implements CustomDataEntity {
 		this.dataStore = dataStore;
 		this.entityName = entityName;
 
-		addFields("name", "timestamp", "value");
+		addFields("name", "timestamp", "value", "dummy_id");
 		addFields(tagNames);
 
 		tags.addAll(Arrays.asList(tagNames));
