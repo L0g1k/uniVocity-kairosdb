@@ -57,10 +57,8 @@ public class KairosDbLoadProcess {
 
 		DataStoreConfiguration databaseConfig = createSourceDatabaseConfiguration();
 		DataStoreConfiguration kairosConfig = createKairosDbConfiguration();
-		MetadataSettings metadataConfig = createMetadataConfiguration();
 
 		EngineConfiguration config = new EngineConfiguration(ENGINE_NAME, databaseConfig, kairosConfig);
-		config.setMetadataSettings(metadataConfig);
 
 		// This step is important: it makes uniVocity "know" how to initialize a
 		// data store from our KairosDataStoreConfiguration
@@ -180,7 +178,7 @@ public class KairosDbLoadProcess {
 		DataStoreMapping mapping = engine.map(SOURCE, DESTINATION);
 
 		EntityMapping map = mapping.map("{observationsAfter($last_id)}", "observations"); 
-
+		
 		map.value().merge("fieldUnitZoneIdentifier", "fieldUnitAddress", "deviceLabel", "observationKind").using("mergeFunction").into("name");
 
 		map.value().copy("observationTimeEpochSeconds").to("timestamp").readingWith("from_s_to_ms");
